@@ -1,0 +1,527 @@
+---
+title: "Upshot-Sienna 2018 Polling Results"
+author: "Ilkin Bayramli"
+date: "April 11, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, warning=FALSE, message=FALSE, echo=FALSE, error=FALSE}
+
+library(tidyverse)
+library(gt)
+library(fs)
+library(gganimate)
+```
+
+#Table 1.
+
+```{r q1, warning=FALSE, message=FALSE, echo=FALSE, error=FALSE}
+
+# I used the raw github file to get the data into a dataframe
+
+ia_03 <- read_csv("https://raw.githubusercontent.com/TheUpshot/2018-live-poll-results/master/data/elections-poll-ia03-3.csv")
+
+ia_03 %>%
+
+  # We only select the columns we need
+
+  select(likely, response, final_weight) %>%
+
+  # We should not include people who did not respond
+
+  filter(likely != "[DO NOT READ] Don't know/Refused") %>%
+
+  # We need to group by likelyihood and response to be able to spread later
+
+  group_by(likely, response) %>%
+
+  # Because not everyone is counted as one person, we need to sum final weights
+
+  summarize(weight = sum(final_weight)) %>%
+
+  # spread puts our data in the shape we want
+
+  spread(response, weight, fill = 0) %>%
+
+  # This is to turn our data into percentages
+
+  mutate(total = sum(Dem, Rep, Und, `3`, `4`, `5`, `6`, na.rm = TRUE),
+         Dem = Dem / total,
+         Rep = Rep / total,
+         Und = Und / total) %>%
+
+  # To mutate likely into factors for rearrangement purposes, we need to ungroup
+  # firts
+
+  ungroup() %>%
+
+  # This is to get the desireable arrangement that we want
+
+  mutate(likely = factor(likely,
+                         levels = c("Already voted",
+                                            "Almost certain",
+                                            "Very likely",
+                                            "Somewhat likely",
+                                            "Not very likely",
+                                            "Not at all likely"))) %>%
+
+  # This is to actually arrange the graph into the shape we want
+
+  arrange(likely) %>%
+
+  # We only need to get the columns that we need
+
+  select(likely, Dem, Rep, Und) %>%
+
+
+  # Now, we need to transform this into a nice table
+
+  gt() %>%
+
+  tab_header(title = "Intention of Voting") %>%
+
+  # This is for better column labels
+
+  cols_label(likely = "",
+             Dem = "DEM.",
+             Rep = "REP.",
+             Und = "UND.") %>%
+
+  # We need to formate everything as a percentage
+
+  fmt_percent(columns = vars(Dem, Rep, Und), decimals = 0) %>%
+
+  na_if(0) %>%
+  
+  fmt_missing(columns = vars(Dem, Und), rows = 5, missing_text = "----") %>%
+  
+  fmt_missing(columns = vars(Rep), rows = 6, missing_text = "----") %>%
+  
+  # Since all the sources can be found in Upshot/Siena, I just cited it as a source.
+
+  tab_source_note("SOURCE: New York Times Upshot/Siena College 2018 live polls")
+
+```
+
+# Table2.
+
+```{r q2, warning=FALSE, message=FALSE, echo=FALSE, error=FALSE}
+
+# we download the list of all files from the github repo
+
+download.file("https://github.com/TheUpshot/2018-live-poll-results/archive/master.zip", "polls_data.zip")
+
+# Unzip it so we are able to reach the files folder
+
+unzip("polls_data.zip")
+
+# We need to get rid of the files we won't need to keep our repo clean
+
+file_delete("polls_data.zip")
+
+# This gets us the list of all filenames to later pass into our map function
+
+file_list <- dir_ls("2018-live-poll-results-master/data")
+
+# This finally aggregated_datas our data into a single dataframe
+
+aggregated_data <- map_dfr(file_list, read_csv, .id = "source")
+
+# To find the number of interviews it suffices to simply pass in the dataframe
+# into the nrow() function
+
+number_of_interviews <- aggregated_data %>% nrow()
+
+# TO find the number of unique House and Senate polls first let's find the
+# unique sources
+
+sen_polls <- aggregated_data %>% 
+  
+  select(source) %>% 
+  
+  # So, far we get the names of elements in the data folder
+  
+  unique() %>%
+  
+  # This gets us the poll names that include the word "sen" which stand for the
+  # word "Senate"
+  
+  filter(str_detect(source, "sen")) %>%
+  
+  # counting rows gives us the desired answer
+  
+  nrow()
+
+
+# This part does the same as above, so I won't comment any more
+
+house_polls <- aggregated_data %>%
+  
+  select(source) %>%
+  
+  unique() %>%
+  
+  # In the sen_polls$source we have 4 digits (2018) in evey title plus 3 in
+  # names of senate polls or 1 for house polls. The senate polls shoudl
+  # therefore have more than  6 digits in their name. This is reflected in my
+  # code below.
+  
+  filter(str_count(source, "[0-9]") > 6) %>% 
+  
+  # As always, nrow helps a lot
+  
+  nrow()
+
+
+# I couldn't find a better way of solving this, so I just brute-forced
+
+unique_poll <- aggregated_data %>%
+  
+  # I get the column I need
+  
+  select(source) %>%
+  
+  # only the unique entries are needed
+  
+  unique() %>%
+  
+  # I need to get the last part between brackets, so I just separate and select
+  # until I get to the part I need
+  
+  separate(source, sep = "-poll-", into = c("1", "2", "3", "4")) %>%
+  
+  select(`3`) %>%
+  
+  # same thing
+  
+  separate(`3`, sep = "-", into = c("1", "2")) %>% 
+  
+  select(`1`) %>%
+  
+  # Here I matured enough to actually use a RegEx. I select only the first two
+  # characters from the string which represents the states we need
+  
+  mutate(`1` = str_extract(`1`, "^.{0,2}")) %>% 
+  
+  # finally, I look at the unique values only
+  
+  unique() %>%
+  
+  # and find the number of such unique values
+  
+  nrow()
+
+
+unique_sen_poll <- aggregated_data %>%
+  
+  # I get the column of source names
+  
+  select(source) %>%
+  
+  # only the unique entries are needed
+  
+  unique() %>%
+  
+  # after seeing how inefficient bashing can be, I finally got the courage to
+  # learn regular expressions and come up with the concise code below
+  
+  filter(str_detect(source, "(?<=elections-poll-)(.*)(?=sen-.(.csv))")) %>%
+  
+  mutate(source = str_extract(source, "(?<=elections-poll-)(.*)(?=sen-.(.csv))")) %>%
+  
+  unique() %>%
+  
+  nrow()
+
+
+unique_house_districts <- aggregated_data %>%
+  
+  # I get the column of source names
+  
+  select(source) %>%
+  
+  # only the unique entries are needed
+  
+  unique() %>%
+  
+  # I filter for house polls only
+  
+  filter(str_detect(source, "(?<=elections-poll-)(.*)[0-9]{2}")) %>%
+  
+  # after filtering the unnecessary data, I extract the portion that is relevant
+  # for my analysis
+  
+  mutate(source = str_extract(source, "(?<=elections-poll-)(.*)[0-9]{2}")) %>%
+  
+  # this is to match the number of unique districts
+  
+  unique() %>%
+  
+  nrow()
+
+
+
+house_two_waves <- aggregated_data %>%
+  
+  # I get the column of source names
+  
+  select(source) %>%
+  
+  # only the unique entries are needed
+  
+  unique() %>%
+  
+  # this is to filter for house districts only
+  
+  filter(str_detect(source, "(?<=elections-poll-)(.*)[0-9]{2}")) %>%
+  
+  # I extract state, district, and wave information
+  
+  mutate(source = str_to_upper(str_extract(source, "(?<=elections-poll-)(.*)[0-9]{2}-[0-9]"))) %>%
+  
+  # This way, I make two columns out of one: one representing the state and
+  # district; other representing the wave of the poll
+  
+  separate(source, into = c("state_district", "wave_number"), sep = "-") %>%
+  
+  group_by(state_district) %>% 
+  
+  # summarizing makes sure that we get the state_district and the number of
+  # times it was polled
+  
+  summarize(n = n()) %>% 
+  
+  # we are looking for the state districts that were polled more than once
+  
+  filter(n > 1) 
+  
+# I didn't pipe directly into nrow() because I need the data above for the next
+# question
+
+house_two_waves_number <- nrow(house_two_waves)
+
+```
+
+
+```{r q3, warning=FALSE, message=FALSE, echo=FALSE, error=FALSE}
+
+aggregated_data %>%
+
+  # This is to get the dataframe columns that we need
+  # and yeah, regular expressions are life
+
+  mutate(state_district = str_to_upper(str_extract(source,
+                                                   "(?<=elections-poll-)(.*)(?=-.(.csv))")),
+         wave = str_extract(source,
+                            "(?<=elections-poll-.{1,5}-)(.*)(?=(.csv))"),
+         hsg = ifelse(str_detect(state_district, "SEN"),
+                      "SENATE",
+                      ifelse(str_detect(state_district, "GOV"),
+                             "GOVERNOR",
+                             "HOUSE"))) %>%
+
+  # We of course need to get rid of all the unnecessary columns. (hsg stands for
+  # HOUSE, SENATE, GOVERNOR)
+
+  select(state_district, hsg, wave, response, final_weight) %>%
+
+  # This makes sure that the districts we are investigating are the ones that
+  # have been polled twice.
+
+  filter(hsg == "HOUSE",
+         state_district %in% house_two_waves$state_district) %>%
+
+  # We will eventually need to group and spread
+
+  group_by(state_district, wave, response) %>%
+
+  # This is to get rid of all the unnecessary columns and get the weight values
+  # for each party response
+
+  summarize(total = sum(final_weight)) %>%
+
+  # This makes it much easier to work with our data
+
+  spread(response, total, fill = 0) %>%
+
+  # This implements the formula given on the mt_2_exam.html
+
+  mutate(total = `3` + `4` + `5` + `6` + Dem + Rep + Und,
+         dem_adv = (Dem - Rep)/total) %>%
+
+  # Getting rid of all the unnecessary columns
+
+  select(state_district, wave, dem_adv) %>%
+
+  # Reshaping the data once again
+
+  spread(wave, dem_adv, fill = 0) %>%
+
+  # Tranforming our temporary variables into polls
+
+  transmute(poll_1 = `1` + `2`,
+         poll_2 = `3`,
+         change = poll_2 - poll_1) %>%
+
+  # This was required by the prompt
+
+  filter(abs(change) >= 0.07) %>%
+
+  # We need this to modify the district labels
+
+  ungroup() %>%
+
+  # This is to turn the state_district variable into the standard format
+  # I am so happy that I learned regular expressions!!!
+
+  mutate(a = str_extract(state_district, "..(?=[0-9])"),
+         b = str_extract(state_district, "(?<=[A-Z]{2}).."),
+         b = str_replace(b, "0", "")) %>%
+
+  # Lastly, getting the final dataframe format we want
+
+  transmute(state_district = str_c(a, b, sep = "-"), poll_1, poll_2, change) %>%
+
+  gt() %>%
+
+  # Every table should have a title, of course
+
+  tab_header(title = "Change of Democratic Advantage in House Races in Select US Districts Polled Twice in 2018",
+             subtitle = "In which districts are Democrats gaining or losing advantage?") %>%
+
+  # This is to make the columns look prettier
+
+  cols_label(state_district = "District",
+             poll_1 = "Poll 1",
+             poll_2 = "Poll 2",
+             change = "Change") %>%
+
+  # This is to format column entries as percentages
+
+  fmt_percent(vars(poll_1, poll_2, change), decimals = 1) %>%
+
+  # Source is crucial
+
+  tab_source_note("SOURCE: New York Times Upshot/Siena College 2018 live polls") %>%
+  
+  # This is to add footnote to explain that we only included states with change of more than 7%
+  
+  tab_footnote(
+    footnote = "This table only includes districts with nonmarginal change of at least 7 percent in democratic advantage.",
+    locations = cells_column_labels(
+      columns = vars(change))
+  )
+
+# ----------------------------
+
+# NOTE: I did not arrange the table by magnitude of change or so because I felt
+# it is aesthetically pleasing to see districts with similar names come
+# together: e.g. it is much nicer to see IL-12 and IL-14 grouped together than
+# to see IL with PA or TX. I also provides the reader a better sense of how
+# different districts in the same state compare to each other. For example,
+# although IL-12 and IL-14 are in the same state, one has seen 7.5% decrease in
+# dem. adv while the other has seen 10.1% increase.
+
+# -----------------------------
+
+```
+
+#Graphic 1.
+```{r q4, warning=FALSE, message=FALSE, echo=FALSE, error=FALSE, cache=TRUE}
+p <- aggregated_data %>% 
+  
+  # This who part tries to get the data into the format we had in the previous
+  # exercise, so I won't comment about it again
+  
+  mutate(state_district = str_to_upper(str_extract(source, "(?<=elections-poll-)(.*)(?=-.(.csv))")),
+         wave = str_extract(source, "(?<=elections-poll-.{1,5}-)(.*)(?=(.csv))"),
+         hsg = ifelse(str_detect(state_district, "SEN"),
+                      "SENATE",
+                      ifelse(str_detect(state_district, "GOV"), 
+                             "GOVERNOR",
+                             "HOUSE")),
+         a = str_extract(state_district, "..(?=[0-9])"),
+         b = str_extract(state_district, "(?<=[A-Z]{2}).."),
+         b = str_replace(b, "0", "")) %>%
+  
+  # there are so many variables, it makes my job easier to  select only the
+  # useful ones
+  
+  transmute(state_district = str_c(a, b, sep = "-"), ager, response, wave, 
+            response = fct_collapse(response,
+                                    Democrat = c("Dem"),
+                                    Republican = c("Rep"),
+                                    Undecided = c("Und"))) %>% 
+  
+  # this fileters all the observations that are not in wave 1 (I decided go with
+  # wave one because I think it is a good idea to condense the data and speed up
+  # the animation loading time)
+  
+  filter(wave == 1, 
+         
+         # I also filter na and [DO NOT READ] variables to not confuse the
+         # reader with unknown variables
+         
+         !is.na(ager),
+         !is.na(response),
+         ager != "[DO NOT READ] Don't know/Refused",
+         ager != "[DO NOT READ] Refused",
+         response != "[DO NOT READ] Refused") %>% 
+  group_by(state_district) %>% 
+  
+  # Finally, we pipe the data into ggplot to realize the graphic
+  
+  ggplot(aes(ager, fill = response)) + 
+  
+  # Geom bar is a handy way of counting the number of respondent for each group
+  
+  # NOTE: I did not feel the need to represent everything with percentages as I
+  # thought they were unneccessary. A bar graph correctly filled with colors
+  # explains the proportions very well. Also, note my title. It says I am trying
+  # to show the reader `Political Party Support` not proportions, so using
+  # absolute values is what I need.
+  
+  geom_bar() +
+  
+  # This is to color Democrats with blue and REpuiblicans with red
+  
+  scale_fill_manual(values = c("#134faf", "#ed0b0b", "grey")) +
+  
+  # Minimal theme contrasts very well with blue red grey bars
+  
+  theme_minimal() +
+  
+  # We declate the district names to be the states
+  
+  transition_states(state_district) +
+  
+  # This is to make our graph more descriptive
+  
+  labs(title = "Political Party Support by Age Range in US Districts Polled for \n 2018 House Races in Wave 1",
+       
+       # This writes the district names on the plot and explain the purpose of my graphic
+       
+       subtitle = "Which party do different age groups prefer in each district? \n District: {closest_state}",
+       
+       # NOTE: I did not explain my graph in the caption because I think the
+       # content of this graph becames obvious from title and subtitle alone.
+       # Adding a caption that repeats title and subtitle is unnecessary in my
+       # opinion.
+       
+       caption = "SOURCE: New York Times Upshot/Siena College 2018 live polls", 
+       y = "Number of Respondents",
+       x = "Age Range") +
+  
+  # This is to change the legend title 
+  
+  guides(fill = guide_legend(title = "Response"))
+
+# This makes the graph cycle much slower
+
+animate(p, fps = 1)
+```
+
